@@ -1,0 +1,47 @@
+{
+  "exported_at": "2026-10-27T17:14:12.382140+00:00",
+  "source_table": "sensor_readings",
+  "label_file": "C:\\Users\\samee\\Unorganized\\Projects\\PBL_IoT_Project\\backend\\data\\verified_labels.csv",
+  "label_file_present": false,
+  "dataset_file": "C:\\Users\\samee\\Unorganized\\Projects\\PBL_IoT_Project\\backend\\data\\ml_dataset.csv",
+  "dataset_size": 0,
+  "source_reading_count": 8153,
+  "valid_calibrated_candidates": 2135,
+  "unlabeled_candidate_readings": 2135,
+  "unverified_label_rows": 0,
+  "unmatched_label_rows": 0,
+  "labels_for_invalid_readings": 0,
+  "class_counts": {
+    "Household": 0,
+    "Agricultural": 0,
+    "Aquatic": 0
+  },
+  "physical_sample_counts": {
+    "Household": 0,
+    "Agricultural": 0,
+    "Aquatic": 0
+  },
+  "physical_sample_count": 0,
+  "class_balance_status": "not_assessable_no_verified_labels",
+  "class_imbalance_ratio_max_to_min": null,
+  "feature_names": [
+    "tds_ppm",
+    "temperature_c",
+    "cloudiness_index"
+  ],
+  "target_name": "water_category",
+  "dataset_columns": [
+    "reading_id",
+    "sample_id",
+    "tds_ppm",
+    "temperature_c",
+    "cloudiness_index",
+    "water_category"
+  ],
+  "training_test_split": "not prepared; run python -m app.ml.training prepare after labels are verified",
+  "feature_descriptions": {
+    "tds_ppm": "Calibrated TDS measurement in ppm.",
+    "temperature_c": "Water temperature in degrees Celsius.",
+    "cloudiness_index": "Legacy relative 0-100 sensor index; not calibrated NTU."
+  }
+}

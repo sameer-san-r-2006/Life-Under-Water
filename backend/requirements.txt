@@ -1,0 +1,10 @@
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.27,<1.0
+
+fastapi
+uvicorn[standard]
+psycopg[binary]
+python-dotenv
+pyserial
+scikit-learn>=1.4,<2.0
+xgboost>=2.0,<4.0

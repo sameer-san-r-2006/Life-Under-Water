@@ -1,0 +1,100 @@
+# Life Under Water — Draft 1
+
+Responsive vanilla HTML/CSS/JavaScript dashboard with FastAPI ingestion and PostgreSQL persistence.
+
+## Structure
+
+```text
+life_under_water/
+├── AGENTS.md
+├── README.md
+├── frontend/
+│   ├── index.html
+│   ├── css/styles.css
+│   └── js/
+│       ├── api.js
+│       ├── app.js
+│       └── charts.js
+├── backend/
+│   ├── requirements.txt
+│   ├── .env.example
+│   └── app/
+│       ├── __init__.py
+│       └── main.py
+└── database/schema.sql
+```
+
+## Run the frontend
+
+From the project root:
+
+```bash
+python -m http.server 5500 --directory frontend
+```
+
+Open http://127.0.0.1:5500.
+
+## Run the backend
+
+Python 3.10+ is recommended.
+
+```bash
+cd backend
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
+pip install -r requirements.txt
+copy .env.example .env
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Use `cp .env.example .env` on macOS/Linux instead of `copy`.
+
+The backend exposes `/api/health`, `/api/status`, `/api/overview`, `/api/readings/latest`, `/api/readings/history`, `/api/analytics-summary`, `/api/readings/pull`, and `/api/devices`. Sensor reports are saved with UTC timestamps. The firmware computes TDS ppm with its existing lookup/interpolation; the backend stores that result as canonical `tds_ppm` and keeps `tds_source`, calibration status, and conversion method as provenance. TDS statistics and charts use one source cohort per selected window. A configured `TDS_CALIBRATION_METHOD` filters calibrated records while still allowing the explicitly tagged legacy demonstration source.
+
+## PostgreSQL
+
+Create a database named `life_under_water`, then apply `database/schema.sql`. Set `DATABASE_URL` in `backend/.env` before starting the backend.
+
+For an existing database, set `DATABASE_URL` in `backend/.env`, then apply every additive migration from the `backend` directory:
+
+```powershell
+python -m app.migrate
+```
+
+The migration command runs all SQL files in `database/migrations` in filename order. Migrations are safe to repeat and preserve the raw readings. Migration `004_tds_demo_estimates.sql` retains the legacy estimate column and any values already stored there; it never recalculates ppm from voltage. Migration `005_tds_canonical_source.sql` promotes an already-stored estimate into `tds_ppm` without recalculating it, sets its provenance to `demo_estimate`, and repairs validity only for a finite stored result whose recorded lookup voltage is either absent or within the original lookup range. It does not delete the separate legacy estimate column. The runner verifies the columns used by the serial writer and API.
+
+The serial reader parses the firmware's existing `tds_ppm` result without converting voltage again. Missing, non-finite, negative, or out-of-range legacy results remain unavailable. The legacy estimate is displayed in ppm consistently, with its source preserved internally; the interface does not describe it as experimentally calibrated. Calibrated records are accepted when their method matches `TDS_CALIBRATION_METHOD`, when that optional setting is configured.
+
+`DEVICE_FRESHNESS_SECONDS` and `SENSOR_FRESHNESS_SECONDS` control when device and sensor data become stale. The default is 30 seconds. Overview purpose checks use the newest saved reading only: Agriculture matches when any valid fresh sensor reading exists; Household requires TDS below 200 ppm and turbidity/cloudiness below 100; Aquatic requires TDS above 500 ppm and turbidity/cloudiness below 100. Temperature does not affect the checks. Missing, invalid, or stale required readings produce “Cannot assess.” These threshold-based checks do not certify water safety.
+
+## Turbidity telemetry and historical compatibility
+
+The sensor schema stores `turbidity_ntu` and the relative `cloudiness_index` in separate columns. The checked-in firmware reports a 0-100 cloudiness index and also emits a turbidity field based on its voltage mapping; the sketch notes that mapping has not been validated against a standard NTU instrument. Overview purpose checks use the relative index when it is valid, label it as `index / 100` and not NTU, and do not add a conversion. Raw voltage remains diagnostic data.
+
+The dashboard presents the calibrated sensor as Turbidity (NTU). Historical relative-index readings remain available in Analytics under “Legacy Relative Sensor Index History” and in the existing database/API fields. They are never relabeled or converted as NTU. A later calibrated firmware payload can use the already-supported `turbidity_ntu`, `turbidity_valid`, and `turbidity_calibration_status` fields; no database migration is required.
+
+## Future sensor forecasts
+
+`GET /api/forecasts?horizon_hours=1` supports horizons from 1 to 72 hours. It reads persisted sensor history, groups valid measurements into UTC hourly means, then fits separate Random Forest and XGBoost regressors for temperature, calibrated TDS, and calibrated turbidity. The target timestamp is generated by the backend. Forecast responses include historical hourly points and model projections for the selected horizon; they are computed on request and are not written into `sensor_readings` or the experimental classifier history table. Forecasts are not used for Overview purpose checks.
+
+The service fits at most the most recent 30 days and returns up to 7 days of hourly history for graphs. Each parameter needs at least 8 valid hourly observations spanning at least twice the requested horizon (minimum 6 hours), plus a valid reading no older than 6 hours. Insufficient, stale, or uncalibrated data produces an unavailable status with a reason; no value is substituted. These simple trends have no confidence interval and are not presented as a trained time-series ML model.
+
+## Offline experimental category training data
+
+The verified-label Random Forest / XGBoost category training pipeline and its historical prediction records remain available for offline experimentation. The classifier is no longer exposed in the dashboard or used for sensor forecasts or purpose checks. Its historical `cloudiness_index` feature and database field remain intact and are a relative index, not NTU. Existing artifacts must never have the feature silently reinterpreted.
+
+The classifier dataset exporter continues to include only valid readings paired with explicit verified labels. Copy `backend/data/verified_labels.template.csv` to `backend/data/verified_labels.csv` and add only checked labels. Its columns are `reading_id,sample_id,water_category,label_verified`, with category values `Household`, `Agricultural`, or `Aquatic`. Use the same `sample_id` for repeated observations of one physical sample. A leakage-safe evaluation needs at least two independent physical samples per category.
+
+From the backend directory, export and train the experimental classifier with:
+
+    python -m app.ml.dataset export
+    python -m app.ml.training prepare
+    python -m app.ml.training train
+
+It saves versioned model artifacts and metadata in `backend/ml_artifacts`. Apply the existing additive database migrations with `python -m app.migrate`; no forecast-specific schema change is needed.
+## Checks
+
+From the project root, run `python -m unittest discover -s backend/tests -v` and `node --test frontend/tests/*.test.cjs`.
